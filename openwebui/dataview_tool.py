@@ -1,8 +1,8 @@
 """
 title: DataView Tool
 author: miraiku
-version: 1.1.0
-description: Interroge des fichiers tabulaires (CSV, Excel, JSON, Parquet) en langage naturel via le service dataview.
+version: 1.2.1
+description: Interroge des fichiers tabulaires (CSV, Excel, JSON, Parquet) en langage naturel via le service dataview. Supporte les URLs et les fichiers uploadés.
 """
 
 import json
@@ -12,11 +12,40 @@ import httpx
 from pydantic import BaseModel, Field
 
 
+def _extract_file_from_messages(messages: list[dict] | None) -> dict | None:
+    """Extrait le dernier fichier tabulaire uploadé depuis les messages."""
+    if not messages:
+        return None
+    TABULAR_EXTENSIONS = {".csv", ".xls", ".xlsx", ".json", ".parquet", ".ods", ".tsv"}
+    TABULAR_MIMETYPES = {
+        "text/csv", "application/vnd.ms-excel",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/json", "application/vnd.oasis.opendocument.spreadsheet",
+        "application/octet-stream", "application/parquet",
+    }
+    for message in reversed(messages):
+        for f in reversed(message.get("files", [])):
+            name = f.get("name", "") or f.get("file", {}).get("filename", "")
+            ct = (f.get("content_type", "")
+                  or f.get("file", {}).get("meta", {}).get("content_type", ""))
+            file_id = f.get("id", "") or f.get("file", {}).get("id", "")
+            if not file_id:
+                continue
+            ext = ("." + name.rsplit(".", 1)[-1]).lower() if "." in name else ""
+            if ext in TABULAR_EXTENSIONS or ct in TABULAR_MIMETYPES:
+                return {"id": file_id, "name": name, "content_type": ct}
+    return None
+
+
 class Tools:
     class Valves(BaseModel):
         dataview_api_url: str = Field(
             default="http://dataview:8093",
             description="URL du service dataview",
+        )
+        openwebui_url: str = Field(
+            default="http://openwebui:8080",
+            description="URL interne d'Open WebUI (pour fetch les fichiers uploadés)",
         )
         timeout: int = Field(default=60, description="Timeout en secondes")
 
@@ -35,17 +64,62 @@ class Tools:
                 return {"error": resp.text}
             return resp.json()
 
+    async def _call_upload(
+        self, endpoint: str, file_id: str, filename: str,
+        content_type: str, user: dict, extra_fields: dict | None = None,
+    ) -> dict | list | str:
+        """Fetch le fichier depuis OWUI puis l'envoie au backend dataview."""
+        headers = {}
+        if user and user.get("token"):
+            headers["Authorization"] = f"Bearer {user['token']}"
+
+        async with httpx.AsyncClient(timeout=self.valves.timeout) as client:
+            # Fetch file from OpenWebUI
+            file_resp = await client.get(
+                f"{self.valves.openwebui_url}/api/v1/files/{file_id}/content",
+                headers=headers,
+            )
+            if file_resp.status_code != 200:
+                return {"error": f"Impossible de récupérer le fichier ({file_resp.status_code})"}
+
+            # Send to dataview backend as multipart
+            files = {"file": (filename, file_resp.content, content_type or "application/octet-stream")}
+            data = extra_fields or {}
+            resp = await client.post(
+                f"{self.valves.dataview_api_url}{endpoint}",
+                files=files,
+                data=data,
+            )
+            if resp.status_code >= 400:
+                if resp.headers.get("content-type", "").startswith("application/json"):
+                    return resp.json()
+                return {"error": resp.text}
+            return resp.json()
+
     async def data_preview(
         self,
-        url: str,
+        url: str = "",
         __user__: dict = {},
+        __messages__: list[dict] = None,
     ) -> str:
-        """Aperçu d'un fichier de données (CSV, Excel, JSON, Parquet). Retourne les colonnes, types et premières lignes.
+        """Aperçu d'un fichier de données (CSV, Excel, JSON, Parquet). Fonctionne avec une URL ou un fichier uploadé. Retourne les colonnes, types et premières lignes.
 
-        :param url: URL du fichier à analyser
+        :param url: URL du fichier à analyser (optionnel si un fichier est uploadé)
         :return: Aperçu du fichier avec colonnes, types et 5 premières lignes
         """
-        data = await self._call("/preview", {"url": url})
+        uploaded = _extract_file_from_messages(__messages__)
+
+        is_url = url.startswith("http://") or url.startswith("https://")
+
+        if uploaded:
+            data = await self._call_upload(
+                "/preview/upload", uploaded["id"], uploaded["name"],
+                uploaded["content_type"], __user__,
+            )
+        elif is_url:
+            data = await self._call("/preview", {"url": url})
+        else:
+            return json.dumps({"error": "Veuillez fournir une URL ou uploader un fichier."})
 
         if isinstance(data, dict) and "error" in data:
             return json.dumps(data, ensure_ascii=False)
@@ -71,15 +145,27 @@ class Tools:
 
     async def data_schema(
         self,
-        url: str,
+        url: str = "",
         __user__: dict = {},
+        __messages__: list[dict] = None,
     ) -> str:
         """Schéma détaillé d'un fichier de données : colonnes, types, statistiques, valeurs uniques.
 
-        :param url: URL du fichier à analyser
+        :param url: URL du fichier à analyser (optionnel si un fichier est uploadé)
         :return: Schéma détaillé du fichier
         """
-        data = await self._call("/schema", {"url": url})
+        uploaded = _extract_file_from_messages(__messages__)
+        is_url = url.startswith("http://") or url.startswith("https://")
+
+        if uploaded:
+            data = await self._call_upload(
+                "/schema/upload", uploaded["id"], uploaded["name"],
+                uploaded["content_type"], __user__,
+            )
+        elif is_url:
+            data = await self._call("/schema", {"url": url})
+        else:
+            return json.dumps({"error": "Veuillez fournir une URL ou uploader un fichier."})
 
         if isinstance(data, dict) and "error" in data:
             return json.dumps(data, ensure_ascii=False)
@@ -106,17 +192,33 @@ class Tools:
 
     async def data_query(
         self,
-        url: str,
-        question: str,
+        url: str = "",
+        question: str = "",
         __user__: dict = {},
+        __messages__: list[dict] = None,
     ) -> str:
         """Interroge un fichier de données en langage naturel. Exemples : "Quelles sont les 10 communes les plus peuplées ?", "Population moyenne par département".
 
-        :param url: URL du fichier à interroger
+        :param url: URL du fichier à interroger (optionnel si un fichier est uploadé)
         :param question: Question en langage naturel sur les données
         :return: Résultat de la requête (lignes de données)
         """
-        data = await self._call("/query", {"url": url, "question": question})
+        if not question:
+            return json.dumps({"error": "Veuillez poser une question sur les données."})
+
+        uploaded = _extract_file_from_messages(__messages__)
+        is_url = url.startswith("http://") or url.startswith("https://")
+
+        if uploaded:
+            data = await self._call_upload(
+                "/query/upload", uploaded["id"], uploaded["name"],
+                uploaded["content_type"], __user__,
+                extra_fields={"question": question},
+            )
+        elif is_url:
+            data = await self._call("/query", {"url": url, "question": question})
+        else:
+            return json.dumps({"error": "Veuillez fournir une URL ou uploader un fichier."})
 
         if isinstance(data, dict) and "error" in data:
             return json.dumps(data, ensure_ascii=False)
@@ -124,19 +226,15 @@ class Tools:
         result = data.get("result", [])
         row_count = data.get("row_count", 0)
         truncated = data.get("truncated", False)
-        operation = data.get("operation", "")
 
         suggestions = [f"\n\n---\n**Pour aller plus loin :**"]
-
         if truncated:
-            suggestions.append(f"- Les résultats sont tronqués ({row_count} lignes affichées). Affinez votre question pour réduire le nombre de résultats.")
-
+            suggestions.append(f"- Les résultats sont tronqués ({row_count} lignes affichées). Affinez votre question.")
         if result:
             result_cols = list(result[0].keys())
             if len(result_cols) >= 2:
                 suggestions.append(f'- "Trie ces résultats par {result_cols[-1]} décroissant"')
             suggestions.append(f'- "Donne-moi des statistiques sur {result_cols[0]}"')
-
         suggestions.append(f"- Posez une autre question sur le même fichier, ou explorez un nouveau dataset.")
 
         data["_suggestions"] = "\n".join(suggestions)

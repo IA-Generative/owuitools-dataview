@@ -46,6 +46,14 @@ def get(url: str) -> bytes | None:
     return data_p.read_bytes()
 
 
+def get_meta(url: str) -> dict | None:
+    key = cache_key(url)
+    meta_p = _meta_path(key)
+    if not meta_p.exists():
+        return None
+    return json.loads(meta_p.read_text())
+
+
 def get_last_modified(url: str) -> str | None:
     key = cache_key(url)
     meta_p = _meta_path(key)
@@ -55,7 +63,8 @@ def get_last_modified(url: str) -> str | None:
     return meta.get("last_modified")
 
 
-def put(url: str, data: bytes, last_modified: str | None = None) -> None:
+def put(url: str, data: bytes, last_modified: str | None = None,
+        content_type: str | None = None, effective_url: str | None = None) -> None:
     _cleanup_if_needed(len(data))
     key = cache_key(url)
     meta = {
@@ -63,6 +72,8 @@ def put(url: str, data: bytes, last_modified: str | None = None) -> None:
         "timestamp": time.time(),
         "size": len(data),
         "last_modified": last_modified,
+        "content_type": content_type,
+        "effective_url": effective_url,
     }
     _meta_path(key).write_text(json.dumps(meta))
     _data_path(key).write_bytes(data)

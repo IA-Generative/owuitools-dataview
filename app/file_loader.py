@@ -97,8 +97,8 @@ def extract_dataset_id(url: str) -> str | None:
     return m.group(1) if m else None
 
 
-async def _download(client: httpx.AsyncClient, url: str) -> tuple[bytes, str | None]:
-    """Télécharge une URL avec retry sur 5xx. Retourne (data, content_type)."""
+async def _download(client: httpx.AsyncClient, url: str) -> tuple[bytes, str | None, str]:
+    """Télécharge une URL avec retry sur 5xx. Retourne (data, content_type, final_url)."""
     max_size = settings.MAX_FILE_SIZE_MB * 1024 * 1024
     last_error = None
 
@@ -130,7 +130,8 @@ async def _download(client: httpx.AsyncClient, url: str) -> tuple[bytes, str | N
                 )
 
             content_type = resp.headers.get("content-type")
-            return data, content_type
+            final_url = str(resp.url)
+            return data, content_type, final_url
 
         except httpx.HTTPStatusError as e:
             last_error = f"{url} → {e.response.status_code}"
@@ -178,7 +179,9 @@ async def load_file(
 
         if cached:
             data = cached
-            content_type = None
+            meta = cache.get_meta(url)
+            content_type = meta.get("content_type") if meta else None
+            effective_url = meta.get("effective_url") or url if meta else url
         else:
             # Stratégie de fallback
             urls_to_try = [url]
@@ -191,8 +194,8 @@ async def load_file(
 
             for try_url in urls_to_try:
                 try:
-                    data, content_type = await _download(client, try_url)
-                    effective_url = try_url
+                    data, content_type, final = await _download(client, try_url)
+                    effective_url = final
                     break
                 except (DownloadError, FileTooLargeError) as e:
                     tried_urls.append(str(e))
@@ -209,8 +212,8 @@ async def load_file(
                         alt_url = info.get(key)
                         if alt_url and alt_url != url:
                             try:
-                                data, content_type = await _download(client, alt_url)
-                                effective_url = alt_url
+                                data, content_type, final = await _download(client, alt_url)
+                                effective_url = final
                                 break
                             except (DownloadError, FileTooLargeError) as e:
                                 tried_urls.append(str(e))
@@ -222,8 +225,8 @@ async def load_file(
                 proxy_url = f"https://www.data.gouv.fr/fr/datasets/r/{resource_id}"
                 if proxy_url != url:
                     try:
-                        data, content_type = await _download(client, proxy_url)
-                        effective_url = proxy_url
+                        data, content_type, final = await _download(client, proxy_url)
+                        effective_url = final
                     except (DownloadError, FileTooLargeError) as e:
                         tried_urls.append(str(e))
 
@@ -244,8 +247,8 @@ async def load_file(
                         if target_fmt and res_fmt != target_fmt:
                             continue
                         try:
-                            data, content_type = await _download(client, res_url)
-                            effective_url = res_url
+                            data, content_type, final = await _download(client, res_url)
+                            effective_url = final
                             break
                         except (DownloadError, FileTooLargeError) as e:
                             tried_urls.append(str(e))
@@ -256,7 +259,7 @@ async def load_file(
                 raise FileUnavailableError(tried_urls)
 
             # Mettre en cache
-            cache.put(url, data)
+            cache.put(url, data, content_type=content_type, effective_url=effective_url)
 
     # Détection du format
     fmt = detect_format(effective_url, content_type, data)
@@ -319,6 +322,25 @@ def _parse(
         return df, None
 
     raise UnsupportedFormatError(fmt)
+
+
+def load_file_from_bytes(
+    data: bytes,
+    filename: str,
+    content_type: str | None = None,
+    sheet: str | None = None,
+) -> tuple[pd.DataFrame, str, str, list[str] | None]:
+    """Parse un fichier déjà téléchargé (upload direct). Retourne (df, format, filename, sheets)."""
+    fmt = (
+        detect_format_from_url(filename)
+        or detect_format_from_content_type(content_type)
+        or detect_format_from_magic(data)
+    )
+    if not fmt or fmt not in SUPPORTED_FORMATS:
+        raise UnsupportedFormatError(fmt or "inconnu")
+
+    df, sheets = _parse(data, fmt, sheet)
+    return df, fmt, filename, sheets
 
 
 # --- Exceptions ---

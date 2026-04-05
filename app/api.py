@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 import pandas as pd
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from app.config import settings
 from app.file_loader import (
@@ -13,6 +13,7 @@ from app.file_loader import (
     FileTooLargeError,
     UnsupportedFormatError,
     load_file,
+    load_file_from_bytes,
 )
 from app.models import (
     ColumnSchema,
@@ -75,6 +76,73 @@ async def preview(req: PreviewRequest):
         dtypes={col: str(df[col].dtype) for col in df.columns},
         preview=df.head(5).to_dict(orient="records"),
         sheets=sheets,
+    )
+
+
+async def _load_df_from_upload(file: UploadFile, sheet: str | None):
+    data = await file.read()
+    max_size = settings.MAX_FILE_SIZE_MB * 1024 * 1024
+    if len(data) > max_size:
+        raise HTTPException(status_code=413, detail=ErrorResponse(
+            error="file_too_large",
+            message=f"Le fichier fait {len(data) / (1024 * 1024):.0f} Mo, la limite est {settings.MAX_FILE_SIZE_MB} Mo.",
+        ).model_dump())
+    try:
+        return load_file_from_bytes(data, file.filename or "upload", file.content_type, sheet)
+    except UnsupportedFormatError as e:
+        raise HTTPException(status_code=415, detail=ErrorResponse(
+            error="unsupported_format",
+            message=str(e),
+        ).model_dump())
+
+
+@router.post("/preview/upload", response_model=PreviewResponse)
+async def preview_upload(file: UploadFile = File(...), sheet: str | None = Form(None)):
+    df, fmt, filename, sheets = await _load_df_from_upload(file, sheet)
+    return PreviewResponse(
+        filename=filename,
+        format=fmt,
+        rows=len(df),
+        columns=list(df.columns),
+        dtypes={col: str(df[col].dtype) for col in df.columns},
+        preview=df.head(5).to_dict(orient="records"),
+        sheets=sheets,
+    )
+
+
+@router.post("/schema/upload", response_model=SchemaResponse)
+async def schema_upload(file: UploadFile = File(...), sheet: str | None = Form(None)):
+    df, fmt, filename, sheets = await _load_df_from_upload(file, sheet)
+    columns = []
+    for col in df.columns:
+        dtype = str(df[col].dtype)
+        null_count = int(df[col].isnull().sum())
+        col_schema = ColumnSchema(name=col, dtype=dtype, null_count=null_count)
+        if pd.api.types.is_numeric_dtype(df[col]):
+            col_schema.min = df[col].min() if not df[col].isnull().all() else None
+            col_schema.max = df[col].max() if not df[col].isnull().all() else None
+            col_schema.mean = float(df[col].mean()) if not df[col].isnull().all() else None
+        else:
+            col_schema.unique_count = int(df[col].nunique())
+            col_schema.sample_values = df[col].dropna().unique()[:4].tolist()
+        columns.append(col_schema)
+    return SchemaResponse(columns=columns, row_count=len(df))
+
+
+@router.post("/query/upload", response_model=QueryResponse)
+async def query_upload(file: UploadFile = File(...), question: str = Form(...), max_rows: int = Form(100)):
+    df, fmt, filename, sheets = await _load_df_from_upload(file, None)
+    try:
+        result_df, operation_desc = await run_query(df, question, max_rows)
+    except (QueryTranslationError, QueryExecutionError) as e:
+        raise HTTPException(status_code=400, detail=ErrorResponse(
+            error="query_failed", message=str(e),
+        ).model_dump())
+    result_records = result_df.to_dict(orient="records")
+    return QueryResponse(
+        question=question, operation=operation_desc,
+        result=result_records, row_count=len(result_records),
+        truncated=len(result_df) >= max_rows,
     )
 
 
