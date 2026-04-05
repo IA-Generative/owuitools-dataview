@@ -19,4 +19,15 @@ cache/
 htmlcov/
 .coverage
 *.log
+# macOS
 .DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+.TemporaryItems
+.apdisk
+Icon?
+__MACOSX/
