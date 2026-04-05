@@ -1,4 +1,4 @@
-# data-query-owui
+# dataview
 
 Service d'interrogation de fichiers tabulaires (CSV, XLS, XLSX, JSON, Parquet, ODS) en langage naturel.
 

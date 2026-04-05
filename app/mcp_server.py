@@ -17,7 +17,7 @@ from app.query_engine import QueryExecutionError, QueryTranslationError, run_que
 
 import pandas as pd
 
-mcp = FastMCP("data-query", instructions="Outils pour interroger des fichiers tabulaires (CSV, Excel, JSON, Parquet) en langage naturel.")
+mcp = FastMCP("dataview", instructions="Outils pour interroger des fichiers tabulaires (CSV, Excel, JSON, Parquet) en langage naturel.")
 
 
 @mcp.tool()

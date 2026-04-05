@@ -35,7 +35,7 @@ router = APIRouter()
 async def healthz():
     return {
         "status": "ok",
-        "service": "data-query-owui",
+        "service": "dataview",
         "formats": ["csv", "xls", "xlsx", "json", "parquet", "ods"],
     }
 

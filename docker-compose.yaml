@@ -1,5 +1,5 @@
 services:
-  data-query:
+  dataview:
     build: .
     ports:
       - "8093:8093"

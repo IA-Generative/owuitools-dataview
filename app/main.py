@@ -9,7 +9,7 @@ from app.api import router
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
 app = FastAPI(
-    title="data-query-owui",
+    title="dataview",
     description="Service d'interrogation de fichiers tabulaires en langage naturel",
     version="1.0.0",
 )

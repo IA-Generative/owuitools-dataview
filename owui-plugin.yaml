@@ -1,8 +1,8 @@
-name: data-query-owui
+name: dataview
 version: "1.0.0"
 
 services:
-  - name: data-query
+  - name: dataview
     port: 8093
 
 pipelines:
@@ -10,9 +10,9 @@ pipelines:
 
 tools:
   entries:
-    - id: data_query
-      source_file: openwebui/data_query_tool.py
-      service_name: data-query
+    - id: dataview
+      source_file: openwebui/dataview_tool.py
+      service_name: dataview
       service_port: 8093
 
 model_tools: []
