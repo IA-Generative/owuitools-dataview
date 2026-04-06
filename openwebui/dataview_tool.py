@@ -5,10 +5,77 @@ version: 1.5.0
 description: Recherche et interroge des fichiers open data (CSV, Excel, JSON, Parquet). Supporte la recherche sur data.gouv.fr, les URLs et les fichiers uploadés.
 """
 
+import html
 import json
 from typing import Any
 
 import httpx
+from fastapi.responses import HTMLResponse
+
+
+def _render_datasets_html(datasets: list[dict], title: str, pagination: str = "") -> str:
+    """Render datasets as a scrollable HTML table."""
+    rows = ""
+    for ds in datasets:
+        resources_html = ""
+        for r in ds.get("resources", []):
+            fmt = r.get("format", "?").upper()
+            url = html.escape(r.get("url", ""))
+            size = f" ({r['filesize_mb']} Mo)" if r.get("filesize_mb") else ""
+            resources_html += f'<a href="{url}" target="_blank" style="display:inline-block;margin:2px 4px;padding:2px 8px;background:#e3f2fd;border-radius:4px;text-decoration:none;font-size:12px;color:#1565c0">{fmt}{size}</a>'
+
+        org = html.escape(ds.get("organization", "") or "")
+        tags = " ".join(f'<span style="display:inline-block;margin:1px 2px;padding:1px 6px;background:#f3e5f5;border-radius:3px;font-size:11px;color:#7b1fa2">{html.escape(t)}</span>' for t in (ds.get("tags") or [])[:3])
+
+        rows += f"""<tr>
+            <td style="padding:8px;border-bottom:1px solid #eee;max-width:300px">
+                <strong>{html.escape(ds.get('title', ''))}</strong><br>
+                <span style="color:#666;font-size:12px">{org}</span>
+                {f'<br>{tags}' if tags else ''}
+            </td>
+            <td style="padding:8px;border-bottom:1px solid #eee">{resources_html}</td>
+            <td style="padding:8px;border-bottom:1px solid #eee;color:#888;font-size:12px">{ds.get('last_update', '')[:10]}</td>
+        </tr>"""
+
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+body {{ font-family: -apple-system, sans-serif; margin: 0; padding: 12px; background: #fafafa; }}
+h3 {{ margin: 0 0 8px 0; color: #333; font-size: 15px; }}
+.info {{ color: #666; font-size: 12px; margin-bottom: 8px; }}
+table {{ width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
+th {{ background: #f5f5f5; padding: 8px; text-align: left; font-size: 13px; border-bottom: 2px solid #ddd; }}
+</style></head><body>
+<h3>{html.escape(title)}</h3>
+{f'<div class="info">{html.escape(pagination)}</div>' if pagination else ''}
+<table>
+<tr><th>Dataset</th><th>Fichiers</th><th>Mis à jour</th></tr>
+{rows}
+</table>
+</body></html>"""
+
+
+def _render_query_html(result: list[dict], operation: str, pagination_text: str = "") -> str:
+    """Render query results as a scrollable HTML table."""
+    if not result:
+        return "<html><body><p>Aucun résultat.</p></body></html>"
+
+    cols = list(result[0].keys())
+    header = "".join(f"<th style='padding:6px 10px;background:#f5f5f5;border-bottom:2px solid #ddd;font-size:12px;white-space:nowrap'>{html.escape(str(c))}</th>" for c in cols)
+    rows = ""
+    for row in result:
+        cells = "".join(f"<td style='padding:5px 10px;border-bottom:1px solid #eee;font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis'>{html.escape(str(row.get(c, '')))}</td>" for c in cols)
+        rows += f"<tr>{cells}</tr>"
+
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+body {{ font-family: -apple-system, sans-serif; margin: 0; padding: 12px; background: #fafafa; }}
+.info {{ color: #666; font-size: 12px; margin-bottom: 8px; }}
+table {{ width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
+th {{ position: sticky; top: 0; z-index: 1; }}
+</style></head><body>
+<div class="info">{html.escape(operation)}{(' — ' + html.escape(pagination_text)) if pagination_text else ''}</div>
+<table><tr>{header}</tr>{rows}</table>
+</body></html>"""
 from pydantic import BaseModel, Field
 
 
@@ -177,24 +244,28 @@ class Tools:
             }, ensure_ascii=False)
 
         has_more = (current_page * page_size) < total
-        output = {
-            "query": query or (f"organization={organization}" if organization else f"tag={tag}" if tag else ""),
+        search_label = query or (f"organisation: {organization}" if organization else f"tag: {tag}" if tag else "")
+        pagination_text = f"Page {current_page} — {len(results)} résultats sur {total}"
+
+        html_content = _render_datasets_html(results, f"Recherche : {search_label}", pagination_text)
+
+        context = {
+            "query": search_label,
             "total": total,
-            "page": current_page,
-            "page_size": page_size,
             "count": len(results),
+            "page": current_page,
             "has_more": has_more,
-            "_instructions": "IMPORTANT : pour chaque dataset, affiche le titre, l'organisation, les formats disponibles ET les URLs des ressources (liens cliquables). L'utilisateur doit pouvoir cliquer sur un lien pour explorer les données.",
-            "datasets": results,
+            "datasets_summary": [{"title": d["title"], "organization": d.get("organization", ""), "formats": [r["format"] for r in d.get("resources", [])]} for d in results],
+            "_instructions": "Fais une synthèse des datasets trouvés. Mentionne les thèmes couverts, les organisations, et les formats disponibles. Le tableau détaillé avec les liens est déjà affiché à l'utilisateur.",
             "_suggestions": (
-                "\n\n---\n**Pour explorer un dataset, utilisez son URL :**\n"
-                '- `data_preview(url)` pour un aperçu\n'
-                '- `data_schema(url)` pour le schéma détaillé\n'
-                '- `data_query(url, question)` pour interroger les données\n'
-                + (f'- **Page suivante** : `data_search(query="{query}", page={current_page + 1})`' if has_more else '')
-            ),
+                f"Page suivante : `data_search(query=\"{query}\", page={current_page + 1})`\n" if has_more else ""
+            ) + "Utilise `data_preview(url)` pour explorer un dataset.",
         }
-        return json.dumps(output, ensure_ascii=False, default=str)
+
+        return (
+            HTMLResponse(content=html_content, headers={"Content-Disposition": "inline"}),
+            context,
+        )
 
     async def data_list_popular(
         self,
@@ -221,22 +292,28 @@ class Tools:
             }, ensure_ascii=False)
 
         has_more = (current_page * page_size) < total
-        output = {
+        title = f"Datasets populaires" + (f" — {theme}" if theme else "")
+        pagination_text = f"Page {current_page} — {len(results)} résultats sur {total}"
+
+        html_content = _render_datasets_html(results, title, pagination_text)
+
+        context = {
             "theme": theme or "tous",
             "total": total,
-            "page": current_page,
             "count": len(results),
+            "page": current_page,
             "has_more": has_more,
-            "datasets": results,
-            "_instructions": "IMPORTANT : pour chaque dataset, affiche le titre, l'organisation, les formats disponibles ET les URLs des ressources (liens cliquables). L'utilisateur doit pouvoir cliquer sur un lien pour explorer les données.",
+            "datasets_summary": [{"title": d["title"], "organization": d.get("organization", ""), "formats": [r["format"] for r in d.get("resources", [])]} for d in results],
+            "_instructions": "Fais une synthèse des datasets les plus populaires. Mentionne les thèmes, les organisations principales. Le tableau avec les liens est déjà affiché.",
             "_suggestions": (
-                "\n\n---\n**Pour explorer un dataset, utilisez son URL :**\n"
-                '- `data_preview(url)` pour un aperçu\n'
-                '- `data_search(query)` pour affiner la recherche\n'
-                + (f'- **Page suivante** : `data_list_popular(theme="{theme}", page={current_page + 1})`' if has_more else '')
-            ),
+                f"Page suivante : `data_list_popular(theme=\"{theme}\", page={current_page + 1})`\n" if has_more else ""
+            ) + "Utilise `data_preview(url)` pour explorer un dataset.",
         }
-        return json.dumps(output, ensure_ascii=False, default=str)
+
+        return (
+            HTMLResponse(content=html_content, headers={"Content-Disposition": "inline"}),
+            context,
+        )
 
     async def data_preview(
         self,
@@ -369,31 +446,41 @@ class Tools:
         row_count = data.get("row_count", 0)
         truncated = data.get("truncated", False)
         pagination = data.get("pagination") or {}
+        operation = data.get("operation", "")
 
         total = pagination.get("total", 0)
         offset = pagination.get("offset", 0)
         count = pagination.get("count", row_count)
         has_more = pagination.get("has_more", False)
 
-        # Add human-readable pagination info
-        if total > 0:
-            data["_pagination"] = f"Résultats {offset + 1} à {offset + count} sur {total} au total."
+        pagination_text = f"Résultats {offset + 1} à {offset + count} sur {total}" if total > 0 else ""
 
-        suggestions = [f"\n\n---\n**Pour aller plus loin :**"]
+        html_content = _render_query_html(result, operation, pagination_text)
+
+        # Build suggestions for next page
+        suggestions = []
         if has_more:
             next_offset = offset + count
             suggestions.append(
-                f'- **Voir les suivants** : "Donne-moi les {count} lignes à partir de la position {next_offset}" '
+                f'Voir les suivants : "Donne-moi les {count} lignes à partir de la position {next_offset}" '
                 f'({total - next_offset} restantes)'
             )
-        if truncated:
-            suggestions.append(f"- Les résultats sont tronqués ({row_count} lignes affichées). Affinez votre question.")
-        if result:
-            result_cols = list(result[0].keys())
-            if len(result_cols) >= 2:
-                suggestions.append(f'- "Trie ces résultats par {result_cols[-1]} décroissant"')
-            suggestions.append(f'- "Donne-moi des statistiques sur {result_cols[0]}"')
-        suggestions.append(f"- Posez une autre question sur le même fichier, ou explorez un nouveau dataset.")
 
-        data["_suggestions"] = "\n".join(suggestions)
-        return json.dumps(data, ensure_ascii=False, default=str)
+        context = {
+            "question": question,
+            "operation": operation,
+            "row_count": count,
+            "total": total,
+            "offset": offset,
+            "has_more": has_more,
+            "pagination_text": pagination_text,
+            "truncated": truncated,
+            "columns": list(result[0].keys()) if result else [],
+            "_instructions": "Le tableau de résultats est déjà affiché à l'utilisateur. Fais une synthèse : commente les données, identifie des tendances ou des points notables. Mentionne la pagination si has_more=true.",
+            "_suggestions": "\n".join(suggestions) if suggestions else "",
+        }
+
+        return (
+            HTMLResponse(content=html_content, headers={"Content-Disposition": "inline"}),
+            context,
+        )
