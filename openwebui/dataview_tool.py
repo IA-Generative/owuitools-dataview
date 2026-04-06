@@ -1,7 +1,7 @@
 """
 title: DataView Tool
 author: miraiku
-version: 1.4.0
+version: 1.5.0
 description: Recherche et interroge des fichiers open data (CSV, Excel, JSON, Parquet). Supporte la recherche sur data.gouv.fr, les URLs et les fichiers uploadés.
 """
 
