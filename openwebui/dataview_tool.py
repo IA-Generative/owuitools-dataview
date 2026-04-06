@@ -39,7 +39,7 @@ def _render_datasets_html(datasets: list[dict], title: str, pagination: str = ""
 
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
-html, body {{ font-family: -apple-system, sans-serif; margin: 0; padding: 12px; background: #fafafa; min-height: 1200px; }}
+html, body {{ font-family: -apple-system, sans-serif; margin: 0; padding: 12px; background: #fafafa; min-height: 100vh; }}
 h3 {{ margin: 0 0 8px 0; color: #333; font-size: 15px; }}
 .info {{ color: #666; font-size: 12px; margin-bottom: 8px; }}
 table {{ width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
@@ -76,20 +76,13 @@ def _render_query_html(result: list[dict], operation: str, pagination_text: str 
 
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
-html, body {{ font-family: -apple-system, sans-serif; margin: 0; padding: 12px; background: #fafafa; min-height: 1000px; }}
+html, body {{ font-family: -apple-system, sans-serif; margin: 0; padding: 12px; background: #fafafa; min-height: 100vh; }}
 .info {{ color: #666; font-size: 12px; margin-bottom: 8px; }}
 table {{ width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
 th {{ position: sticky; top: 0; z-index: 1; }}
 </style></head><body>
 <div class="info">{html.escape(operation)}{(' — ' + html.escape(pagination_text)) if pagination_text else ''}</div>
 <table><tr>{header}</tr>{rows}</table>
-<script>
-const ro = new ResizeObserver(() => {{
-  window.parent.postMessage({{type: 'iframe-resize', height: document.documentElement.scrollHeight}}, '*');
-}});
-ro.observe(document.body);
-window.parent.postMessage({{type: 'iframe-resize', height: document.documentElement.scrollHeight}}, '*');
-</script>
 </body></html>"""
 from pydantic import BaseModel, Field
 
