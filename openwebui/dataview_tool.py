@@ -53,7 +53,11 @@ th {{ background: #f5f5f5; padding: 8px; text-align: left; font-size: 13px; bord
 </table>
 <script>
 // Tell parent iframe to resize to content height
-try {{ window.parent.postMessage({{ type: 'resize', height: document.body.scrollHeight + 40 }}, '*'); }} catch(e) {{}}
+const ro = new ResizeObserver(() => {{
+  window.parent.postMessage({{type: 'iframe-resize', height: document.documentElement.scrollHeight}}, '*');
+}});
+ro.observe(document.body);
+window.parent.postMessage({{type: 'iframe-resize', height: document.documentElement.scrollHeight}}, '*');
 </script>
 </body></html>"""
 
@@ -80,7 +84,11 @@ th {{ position: sticky; top: 0; z-index: 1; }}
 <div class="info">{html.escape(operation)}{(' — ' + html.escape(pagination_text)) if pagination_text else ''}</div>
 <table><tr>{header}</tr>{rows}</table>
 <script>
-try {{ window.parent.postMessage({{ type: 'resize', height: document.body.scrollHeight + 40 }}, '*'); }} catch(e) {{}}
+const ro = new ResizeObserver(() => {{
+  window.parent.postMessage({{type: 'iframe-resize', height: document.documentElement.scrollHeight}}, '*');
+}});
+ro.observe(document.body);
+window.parent.postMessage({{type: 'iframe-resize', height: document.documentElement.scrollHeight}}, '*');
 </script>
 </body></html>"""
 from pydantic import BaseModel, Field
