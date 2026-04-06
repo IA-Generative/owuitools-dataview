@@ -14,6 +14,10 @@ tools:
       source_file: openwebui/dataview_tool.py
       service_name: dataview
       service_port: 8093
+    - id: dataview_auto_preview
+      source_file: openwebui/dataview_filter.py
+      service_name: dataview
+      service_port: 8093
 
 model_tools: []
 env_vars: []

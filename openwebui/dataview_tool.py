@@ -107,9 +107,11 @@ class Tools:
     ) -> str:
         """Recherche des jeux de données open data sur data.gouv.fr. Retourne une liste de datasets avec leurs fichiers téléchargeables.
 
-        :param query: Mots-clés de recherche (ex: "transport", "communes", "élections", "emploi")
+        :param query: Mots-clés de recherche en langage naturel
         :return: Liste de datasets avec titre, description, formats et URLs des ressources
         """
+        if not query:
+            query = "données ouvertes"
         SUPPORTED = {"csv", "xls", "xlsx", "json", "parquet", "ods"}
         async with httpx.AsyncClient(timeout=self.valves.timeout) as client:
             resp = await client.get(
