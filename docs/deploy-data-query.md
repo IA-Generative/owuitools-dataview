@@ -116,7 +116,7 @@ TAG=<le tag du step 4>
 
 # ConfigMap
 kubectl -n miraiku create configmap data-query-config \
-  --from-literal=LLM_API_URL="https://api.scaleway.ai/a9158aac-8404-46ea-8bf5-1ca048cd6ab4/v1" \
+  --from-literal=LLM_API_URL="https://api.scaleway.ai/<YOUR_SCW_PROJECT_ID>/v1" \
   --from-literal=LLM_MODEL="mistral-small-3.2-24b-instruct-2506" \
   --from-literal=MAX_FILE_SIZE_MB="100" \
   --from-literal=MAX_ROWS_OUTPUT="100" \
