@@ -119,8 +119,8 @@ async def schema_upload(file: UploadFile = File(...), sheet: str | None = Form(N
         null_count = int(df[col].isnull().sum())
         col_schema = ColumnSchema(name=col, dtype=dtype, null_count=null_count)
         if pd.api.types.is_numeric_dtype(df[col]):
-            col_schema.min = df[col].min() if not df[col].isnull().all() else None
-            col_schema.max = df[col].max() if not df[col].isnull().all() else None
+            col_schema.min = df[col].min().item() if not df[col].isnull().all() else None
+            col_schema.max = df[col].max().item() if not df[col].isnull().all() else None
             col_schema.mean = float(df[col].mean()) if not df[col].isnull().all() else None
         else:
             col_schema.unique_count = int(df[col].nunique())
@@ -161,8 +161,8 @@ async def schema(req: SchemaRequest):
         )
 
         if pd.api.types.is_numeric_dtype(df[col]):
-            col_schema.min = df[col].min() if not df[col].isnull().all() else None
-            col_schema.max = df[col].max() if not df[col].isnull().all() else None
+            col_schema.min = df[col].min().item() if not df[col].isnull().all() else None
+            col_schema.max = df[col].max().item() if not df[col].isnull().all() else None
             col_schema.mean = float(df[col].mean()) if not df[col].isnull().all() else None
         else:
             col_schema.unique_count = int(df[col].nunique())
