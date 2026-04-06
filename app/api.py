@@ -133,16 +133,18 @@ async def schema_upload(file: UploadFile = File(...), sheet: str | None = Form(N
 async def query_upload(file: UploadFile = File(...), question: str = Form(...), max_rows: int = Form(100)):
     df, fmt, filename, sheets = await _load_df_from_upload(file, None)
     try:
-        result_df, operation_desc = await run_query(df, question, max_rows)
+        result_df, operation_desc, pagination = await run_query(df, question, max_rows)
     except (QueryTranslationError, QueryExecutionError) as e:
         raise HTTPException(status_code=400, detail=ErrorResponse(
             error="query_failed", message=str(e),
         ).model_dump())
     result_records = result_df.to_dict(orient="records")
+    from app.models import PaginationInfo
     return QueryResponse(
         question=question, operation=operation_desc,
         result=result_records, row_count=len(result_records),
         truncated=len(result_df) >= max_rows,
+        pagination=PaginationInfo(**pagination) if pagination else None,
     )
 
 
@@ -178,7 +180,7 @@ async def query(req: QueryRequest):
     df, fmt, filename, sheets = await _load_df(req.url, req.sheet, req.dataset_id, req.resource_id)
 
     try:
-        result_df, operation_desc = await run_query(df, req.question, req.max_rows)
+        result_df, operation_desc, pagination = await run_query(df, req.question, req.max_rows)
     except QueryTranslationError as e:
         raise HTTPException(status_code=400, detail=ErrorResponse(
             error="query_failed",
@@ -195,10 +197,12 @@ async def query(req: QueryRequest):
     result_records = result_df.to_dict(orient="records")
     truncated = len(result_df) >= req.max_rows
 
+    from app.models import PaginationInfo
     return QueryResponse(
         question=req.question,
         operation=operation_desc,
         result=result_records,
         row_count=len(result_records),
         truncated=truncated,
+        pagination=PaginationInfo(**pagination) if pagination else None,
     )

@@ -58,12 +58,20 @@ class SchemaResponse(BaseModel):
     row_count: int
 
 
+class PaginationInfo(BaseModel):
+    total: int = 0
+    offset: int = 0
+    count: int = 0
+    has_more: bool = False
+
+
 class QueryResponse(BaseModel):
     question: str
     operation: str
     result: list[dict[str, Any]]
     row_count: int
     truncated: bool
+    pagination: PaginationInfo | None = None
 
 
 # --- Errors ---

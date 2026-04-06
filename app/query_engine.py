@@ -111,17 +111,17 @@ async def translate_question(df: pd.DataFrame, question: str) -> QueryPlan:
 
 async def run_query(
     df: pd.DataFrame, question: str, max_rows: int = 50
-) -> tuple[pd.DataFrame, str]:
+) -> tuple[pd.DataFrame, str, dict]:
     """
     Pipeline complet : question → plan → exécution → résultat.
-    Retourne (result_df, operation_description).
+    Retourne (result_df, operation_description, pagination).
     """
     plan = await translate_question(df, question)
     try:
-        result_df, operation_desc = await execute_plan(df, plan.steps, max_rows)
+        result_df, operation_desc, pagination = await execute_plan(df, plan.steps, max_rows)
     except SandboxError as e:
         raise QueryExecutionError(str(e), list(df.columns))
-    return result_df, operation_desc
+    return result_df, operation_desc, pagination
 
 
 class QueryTranslationError(Exception):

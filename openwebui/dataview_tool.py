@@ -366,8 +366,24 @@ class Tools:
         result = data.get("result", [])
         row_count = data.get("row_count", 0)
         truncated = data.get("truncated", False)
+        pagination = data.get("pagination") or {}
+
+        total = pagination.get("total", 0)
+        offset = pagination.get("offset", 0)
+        count = pagination.get("count", row_count)
+        has_more = pagination.get("has_more", False)
+
+        # Add human-readable pagination info
+        if total > 0:
+            data["_pagination"] = f"Résultats {offset + 1} à {offset + count} sur {total} au total."
 
         suggestions = [f"\n\n---\n**Pour aller plus loin :**"]
+        if has_more:
+            next_offset = offset + count
+            suggestions.append(
+                f'- **Voir les suivants** : "Donne-moi les {count} lignes à partir de la position {next_offset}" '
+                f'({total - next_offset} restantes)'
+            )
         if truncated:
             suggestions.append(f"- Les résultats sont tronqués ({row_count} lignes affichées). Affinez votre question.")
         if result:

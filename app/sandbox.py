@@ -160,31 +160,47 @@ def execute_step(df: pd.DataFrame, step: OperationStep) -> pd.DataFrame:
 
 async def execute_plan(
     df: pd.DataFrame, steps: list[OperationStep], max_rows: int | None = None
-) -> tuple[pd.DataFrame, str]:
+) -> tuple[pd.DataFrame, str, dict]:
     """
     Exécute un plan d'opérations séquentiellement sur le DataFrame.
-    Retourne (result_df, operation_description).
+    Retourne (result_df, operation_description, pagination_info).
     """
     if not steps:
         raise SandboxError("Plan d'opérations vide")
 
     max_rows = max_rows or settings.MAX_ROWS_OUTPUT
+    total_before_head = len(df)
     ops_desc: list[str] = []
+    last_offset = 0
+    last_n = 0
 
     for step in steps:
+        total_before_head = len(df)
         try:
             df = await asyncio.wait_for(
                 asyncio.get_event_loop().run_in_executor(None, execute_step, df, step),
                 timeout=settings.QUERY_TIMEOUT_SECONDS,
             )
             ops_desc.append(f"{step.op}({step.col or step.group_col or ''})")
+            if step.op == "head":
+                last_offset = step.offset or 0
+                last_n = step.n or 10
         except asyncio.TimeoutError:
             raise SandboxError(
                 f"Opération '{step.op}' interrompue : timeout ({settings.QUERY_TIMEOUT_SECONDS}s)"
             )
 
     operation_str = " → ".join(ops_desc)
-    return df.head(max_rows), operation_str
+    result = df.head(max_rows)
+
+    pagination = {
+        "total": total_before_head,
+        "offset": last_offset,
+        "count": len(result),
+        "has_more": (last_offset + len(result)) < total_before_head,
+    }
+
+    return result, operation_str, pagination
 
 
 class SandboxError(Exception):
