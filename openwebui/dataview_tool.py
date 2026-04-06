@@ -184,6 +184,7 @@ class Tools:
             "page_size": page_size,
             "count": len(results),
             "has_more": has_more,
+            "_instructions": "IMPORTANT : pour chaque dataset, affiche le titre, l'organisation, les formats disponibles ET les URLs des ressources (liens cliquables). L'utilisateur doit pouvoir cliquer sur un lien pour explorer les données.",
             "datasets": results,
             "_suggestions": (
                 "\n\n---\n**Pour explorer un dataset, utilisez son URL :**\n"
@@ -227,6 +228,7 @@ class Tools:
             "count": len(results),
             "has_more": has_more,
             "datasets": results,
+            "_instructions": "IMPORTANT : pour chaque dataset, affiche le titre, l'organisation, les formats disponibles ET les URLs des ressources (liens cliquables). L'utilisateur doit pouvoir cliquer sur un lien pour explorer les données.",
             "_suggestions": (
                 "\n\n---\n**Pour explorer un dataset, utilisez son URL :**\n"
                 '- `data_preview(url)` pour un aperçu\n'
