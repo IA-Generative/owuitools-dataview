@@ -21,9 +21,10 @@ Voici le schéma du DataFrame :
 
 Opérations disponibles :
 - filter: filtre les lignes (col, operator [==, !=, >, <, >=, <=, contains, startswith], value)
-- sort: trie (col, ascending: true/false)
-- top_n: les N plus grandes valeurs (col, n)
-- bottom_n: les N plus petites valeurs (col, n)
+- sort: trie (col, ascending: true/false). ascending=true pour A→Z ou petit→grand, false pour Z→A ou grand→petit.
+- head: les N premières lignes du résultat (n). A combiner avec sort pour "les N premiers triés par..."
+- top_n: les N plus grandes valeurs NUMERIQUES (col, n). Ne PAS utiliser sur des colonnes texte.
+- bottom_n: les N plus petites valeurs NUMERIQUES (col, n). Ne PAS utiliser sur des colonnes texte.
 - group_count: compte par groupe (col)
 - group_sum: somme par groupe (group_col, sum_col)
 - group_mean: moyenne par groupe (group_col, mean_col)
@@ -37,6 +38,7 @@ Retourne UNIQUEMENT un JSON valide avec le champ "steps". Chaque step a un champ
 
 Exemples :
 - "Les 10 communes les plus peuplées" → {{"steps": [{{"op": "top_n", "col": "population", "n": 10}}]}}
+- "5 premières lignes triées par ordre alphabétique" → {{"steps": [{{"op": "sort", "col": "nom", "ascending": true}}, {{"op": "head", "n": 5}}]}}
 - "Communes du 93 triées par population" → {{"steps": [{{"op": "filter", "col": "departement", "operator": "==", "value": "93"}}, {{"op": "sort", "col": "population", "ascending": false}}]}}
 - "Population moyenne par département" → {{"steps": [{{"op": "group_mean", "group_col": "departement", "mean_col": "population"}}]}}
 """

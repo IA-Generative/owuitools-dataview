@@ -61,6 +61,11 @@ def _op_sort(df: pd.DataFrame, step: OperationStep) -> pd.DataFrame:
     return df.sort_values(step.col, ascending=asc)
 
 
+def _op_head(df: pd.DataFrame, step: OperationStep) -> pd.DataFrame:
+    n = step.n or 10
+    return df.head(n)
+
+
 def _op_top_n(df: pd.DataFrame, step: OperationStep) -> pd.DataFrame:
     _validate_column(df, step.col)
     n = step.n or 10
@@ -126,6 +131,7 @@ def _op_search(df: pd.DataFrame, step: OperationStep) -> pd.DataFrame:
 OPERATIONS = {
     "filter": _op_filter,
     "sort": _op_sort,
+    "head": _op_head,
     "top_n": _op_top_n,
     "bottom_n": _op_bottom_n,
     "group_count": _op_group_count,
