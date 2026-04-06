@@ -39,7 +39,7 @@ def _render_datasets_html(datasets: list[dict], title: str, pagination: str = ""
 
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
-html, body {{ font-family: -apple-system, sans-serif; margin: 0; padding: 12px; background: #fafafa; min-height: 600px; }}
+html, body {{ font-family: -apple-system, sans-serif; margin: 0; padding: 12px; background: #fafafa; min-height: 1200px; }}
 h3 {{ margin: 0 0 8px 0; color: #333; font-size: 15px; }}
 .info {{ color: #666; font-size: 12px; margin-bottom: 8px; }}
 table {{ width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
@@ -76,7 +76,7 @@ def _render_query_html(result: list[dict], operation: str, pagination_text: str 
 
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
-html, body {{ font-family: -apple-system, sans-serif; margin: 0; padding: 12px; background: #fafafa; min-height: 500px; }}
+html, body {{ font-family: -apple-system, sans-serif; margin: 0; padding: 12px; background: #fafafa; min-height: 1000px; }}
 .info {{ color: #666; font-size: 12px; margin-bottom: 8px; }}
 table {{ width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
 th {{ position: sticky; top: 0; z-index: 1; }}
