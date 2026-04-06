@@ -46,9 +46,9 @@ class Filter:
         """
         # Collect file IDs from previous messages (already processed)
         old_ids: set[str] = set()
-        messages = body.get("messages", [])
+        messages = body.get("messages") or []
         for m in messages[:-1]:  # All messages except the last (current)
-            for f in m.get("files", []):
+            for f in (m.get("files") or []):
                 fid = f.get("id", "") or f.get("file", {}).get("id", "")
                 if fid:
                     old_ids.add(fid)
@@ -57,9 +57,9 @@ class Filter:
         results: list[dict] = []
 
         # Source 1: metadata.files (where OWUI puts uploaded files)
-        metadata_files = body.get("metadata", {}).get("files", [])
+        metadata_files = body.get("metadata", {}).get("files") or []
         # Source 2: body.files
-        body_files = body.get("files", [])
+        body_files = body.get("files") or []
 
         for file_list in [metadata_files, body_files]:
             for f in file_list:
