@@ -1,8 +1,8 @@
 """
 title: DataView Tool
 author: miraiku
-version: 1.2.1
-description: Interroge des fichiers tabulaires (CSV, Excel, JSON, Parquet) en langage naturel via le service dataview. Supporte les URLs et les fichiers uploadés.
+version: 1.3.0
+description: Recherche et interroge des fichiers open data (CSV, Excel, JSON, Parquet). Supporte la recherche sur data.gouv.fr, les URLs et les fichiers uploadés.
 """
 
 import json
@@ -46,6 +46,10 @@ class Tools:
         openwebui_url: str = Field(
             default="http://openwebui:8080",
             description="URL interne d'Open WebUI (pour fetch les fichiers uploadés)",
+        )
+        datagouv_api_url: str = Field(
+            default="https://www.data.gouv.fr/api/1",
+            description="URL de l'API data.gouv.fr",
         )
         timeout: int = Field(default=60, description="Timeout en secondes")
 
@@ -95,6 +99,68 @@ class Tools:
                     return resp.json()
                 return {"error": resp.text}
             return resp.json()
+
+    async def data_search(
+        self,
+        query: str,
+        __user__: dict = {},
+    ) -> str:
+        """Recherche des jeux de données open data sur data.gouv.fr. Retourne une liste de datasets avec leurs fichiers téléchargeables.
+
+        :param query: Mots-clés de recherche (ex: "transport", "communes", "élections", "emploi")
+        :return: Liste de datasets avec titre, description, formats et URLs des ressources
+        """
+        SUPPORTED = {"csv", "xls", "xlsx", "json", "parquet", "ods"}
+        async with httpx.AsyncClient(timeout=self.valves.timeout) as client:
+            resp = await client.get(
+                f"{self.valves.datagouv_api_url}/datasets/",
+                params={"q": query, "page_size": 10},
+            )
+            if resp.status_code != 200:
+                return json.dumps({"error": f"Erreur API data.gouv.fr ({resp.status_code})"})
+
+            data = resp.json()
+            results = []
+            for ds in data.get("data", []):
+                resources = []
+                for r in ds.get("resources", []):
+                    fmt = (r.get("format") or "").lower()
+                    if fmt not in SUPPORTED:
+                        continue
+                    resources.append({
+                        "title": r.get("title", ""),
+                        "format": fmt,
+                        "url": f"https://www.data.gouv.fr/fr/datasets/r/{r['id']}",
+                        "filesize_mb": round(r["filesize"] / (1024 * 1024), 1) if r.get("filesize") else None,
+                    })
+                if not resources:
+                    continue
+                results.append({
+                    "title": ds.get("title", ""),
+                    "description": (ds.get("description") or "")[:200],
+                    "organization": (ds.get("organization") or {}).get("name", ""),
+                    "last_update": (ds.get("last_update") or "")[:10],
+                    "resources": resources[:3],
+                })
+
+            if not results:
+                return json.dumps({
+                    "message": f"Aucun dataset tabulaire trouvé pour '{query}'.",
+                    "suggestion": "Essayez avec d'autres mots-clés ou consultez https://www.data.gouv.fr",
+                }, ensure_ascii=False)
+
+            output = {
+                "query": query,
+                "count": len(results),
+                "datasets": results,
+                "_suggestions": (
+                    "\n\n---\n**Pour explorer un dataset, copiez son URL et demandez :**\n"
+                    '- "Donne-moi un aperçu de ce fichier : [URL]"\n'
+                    '- "Quel est le schéma de ce fichier : [URL]"\n'
+                    '- "Dans ce fichier [URL], quelles sont les 10 premières lignes ?"'
+                ),
+            }
+            return json.dumps(output, ensure_ascii=False, default=str)
 
     async def data_preview(
         self,
