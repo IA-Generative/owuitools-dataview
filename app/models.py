@@ -85,6 +85,7 @@ class OperationStep(BaseModel):
     operator: str | None = None
     value: Any | None = None
     n: int | None = None
+    offset: int | None = None
     ascending: bool | None = None
     group_col: str | None = None
     sum_col: str | None = None

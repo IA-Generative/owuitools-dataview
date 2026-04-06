@@ -63,7 +63,8 @@ def _op_sort(df: pd.DataFrame, step: OperationStep) -> pd.DataFrame:
 
 def _op_head(df: pd.DataFrame, step: OperationStep) -> pd.DataFrame:
     n = step.n or 10
-    return df.head(n)
+    offset = step.offset or 0
+    return df.iloc[offset:offset + n]
 
 
 def _op_top_n(df: pd.DataFrame, step: OperationStep) -> pd.DataFrame:

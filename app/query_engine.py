@@ -22,7 +22,7 @@ Voici le schéma du DataFrame :
 Opérations disponibles :
 - filter: filtre les lignes (col, operator [==, !=, >, <, >=, <=, contains, startswith], value)
 - sort: trie (col, ascending: true/false). ascending=true pour A→Z ou petit→grand, false pour Z→A ou grand→petit.
-- head: les N premières lignes du résultat (n). A combiner avec sort pour "les N premiers triés par..."
+- head: les N lignes du résultat (n, offset). Combine avec sort pour "les N premiers triés par...". offset=50 pour commencer à la position 50.
 - top_n: les N plus grandes valeurs NUMERIQUES (col, n). Ne PAS utiliser sur des colonnes texte.
 - bottom_n: les N plus petites valeurs NUMERIQUES (col, n). Ne PAS utiliser sur des colonnes texte.
 - group_count: compte par groupe (col)
