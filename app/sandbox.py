@@ -64,13 +64,19 @@ def _op_sort(df: pd.DataFrame, step: OperationStep) -> pd.DataFrame:
 def _op_top_n(df: pd.DataFrame, step: OperationStep) -> pd.DataFrame:
     _validate_column(df, step.col)
     n = step.n or 10
-    return df.nlargest(n, step.col)
+    if pd.api.types.is_numeric_dtype(df[step.col]):
+        return df.nlargest(n, step.col)
+    # Fallback for non-numeric columns (e.g. alphabetical sort)
+    return df.sort_values(step.col, ascending=False).head(n)
 
 
 def _op_bottom_n(df: pd.DataFrame, step: OperationStep) -> pd.DataFrame:
     _validate_column(df, step.col)
     n = step.n or 10
-    return df.nsmallest(n, step.col)
+    if pd.api.types.is_numeric_dtype(df[step.col]):
+        return df.nsmallest(n, step.col)
+    # Fallback for non-numeric columns (e.g. alphabetical sort)
+    return df.sort_values(step.col, ascending=True).head(n)
 
 
 def _op_group_count(df: pd.DataFrame, step: OperationStep) -> pd.DataFrame:
