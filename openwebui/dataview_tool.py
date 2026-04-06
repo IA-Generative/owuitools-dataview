@@ -1,7 +1,7 @@
 """
 title: DataView Tool
 author: miraiku
-version: 1.3.0
+version: 1.4.0
 description: Recherche et interroge des fichiers open data (CSV, Excel, JSON, Parquet). Supporte la recherche sur data.gouv.fr, les URLs et les fichiers uploadés.
 """
 
@@ -100,66 +100,128 @@ class Tools:
                 return {"error": resp.text}
             return resp.json()
 
+    SUPPORTED_FORMATS = {"csv", "xls", "xlsx", "json", "parquet", "ods"}
+
+    def _format_dataset(self, ds: dict) -> dict | None:
+        """Formate un dataset data.gouv.fr avec ses ressources tabulaires."""
+        resources = []
+        for r in ds.get("resources", []):
+            fmt = (r.get("format") or "").lower()
+            if fmt not in self.SUPPORTED_FORMATS:
+                continue
+            resources.append({
+                "title": r.get("title", ""),
+                "format": fmt,
+                "url": f"https://www.data.gouv.fr/fr/datasets/r/{r['id']}",
+                "filesize_mb": round(r["filesize"] / (1024 * 1024), 1) if r.get("filesize") else None,
+            })
+        if not resources:
+            return None
+        return {
+            "title": ds.get("title", ""),
+            "description": (ds.get("description") or "")[:200],
+            "organization": (ds.get("organization") or {}).get("name", ""),
+            "tags": (ds.get("tags") or [])[:5],
+            "last_update": (ds.get("last_update") or "")[:10],
+            "page": ds.get("page", ""),
+            "resources": resources[:5],
+        }
+
     async def data_search(
         self,
-        query: str,
+        query: str = "",
+        organization: str = "",
+        tag: str = "",
         __user__: dict = {},
     ) -> str:
-        """Recherche des jeux de données open data sur data.gouv.fr. Retourne une liste de datasets avec leurs fichiers téléchargeables.
+        """Recherche des jeux de données open data sur data.gouv.fr (74 000+ datasets publics). Retourne les datasets avec leurs fichiers téléchargeables (CSV, Excel, JSON, Parquet).
 
         :param query: Mots-clés de recherche en langage naturel
-        :return: Liste de datasets avec titre, description, formats et URLs des ressources
+        :param organization: Filtrer par organisation (ex: "SNCF", "INSEE", "Ministère")
+        :param tag: Filtrer par tag (ex: "transport", "emploi", "sante", "environnement")
+        :return: Liste de datasets avec titre, description, formats et URLs
         """
-        if not query:
+        if not query and not organization and not tag:
             query = "données ouvertes"
-        SUPPORTED = {"csv", "xls", "xlsx", "json", "parquet", "ods"}
+
+        params = {"page_size": 10}
+        if query:
+            params["q"] = query
+        if organization:
+            params["organization"] = organization
+        if tag:
+            params["tag"] = tag
+
         async with httpx.AsyncClient(timeout=self.valves.timeout) as client:
             resp = await client.get(
                 f"{self.valves.datagouv_api_url}/datasets/",
-                params={"q": query, "page_size": 10},
+                params=params,
             )
             if resp.status_code != 200:
                 return json.dumps({"error": f"Erreur API data.gouv.fr ({resp.status_code})"})
 
             data = resp.json()
-            results = []
-            for ds in data.get("data", []):
-                resources = []
-                for r in ds.get("resources", []):
-                    fmt = (r.get("format") or "").lower()
-                    if fmt not in SUPPORTED:
-                        continue
-                    resources.append({
-                        "title": r.get("title", ""),
-                        "format": fmt,
-                        "url": f"https://www.data.gouv.fr/fr/datasets/r/{r['id']}",
-                        "filesize_mb": round(r["filesize"] / (1024 * 1024), 1) if r.get("filesize") else None,
-                    })
-                if not resources:
-                    continue
-                results.append({
-                    "title": ds.get("title", ""),
-                    "description": (ds.get("description") or "")[:200],
-                    "organization": (ds.get("organization") or {}).get("name", ""),
-                    "last_update": (ds.get("last_update") or "")[:10],
-                    "resources": resources[:3],
-                })
+            results = [r for r in (self._format_dataset(ds) for ds in data.get("data", [])) if r]
 
             if not results:
                 return json.dumps({
-                    "message": f"Aucun dataset tabulaire trouvé pour '{query}'.",
-                    "suggestion": "Essayez avec d'autres mots-clés ou consultez https://www.data.gouv.fr",
+                    "message": f"Aucun dataset tabulaire trouvé pour cette recherche.",
+                    "suggestion": "Essayez d'autres mots-clés, ou utilisez data_list_popular() pour voir les datasets les plus consultés.",
                 }, ensure_ascii=False)
 
             output = {
-                "query": query,
+                "query": query or f"organization={organization}" if organization else f"tag={tag}" if tag else "",
+                "total": data.get("total", 0),
                 "count": len(results),
                 "datasets": results,
                 "_suggestions": (
-                    "\n\n---\n**Pour explorer un dataset, copiez son URL et demandez :**\n"
-                    '- "Donne-moi un aperçu de ce fichier : [URL]"\n'
-                    '- "Quel est le schéma de ce fichier : [URL]"\n'
-                    '- "Dans ce fichier [URL], quelles sont les 10 premières lignes ?"'
+                    "\n\n---\n**Pour explorer un dataset, utilisez son URL :**\n"
+                    '- `data_preview(url)` pour un aperçu\n'
+                    '- `data_schema(url)` pour le schéma détaillé\n'
+                    '- `data_query(url, question)` pour interroger les données'
+                ),
+            }
+            return json.dumps(output, ensure_ascii=False, default=str)
+
+    async def data_list_popular(
+        self,
+        theme: str = "",
+        __user__: dict = {},
+    ) -> str:
+        """Liste les jeux de données open data les plus populaires sur data.gouv.fr, triés par nombre de vues.
+
+        :param theme: Thème optionnel pour filtrer (ex: "transport", "sante", "education", "environnement", "emploi", "logement")
+        :return: Les 10 datasets les plus consultés avec leurs fichiers
+        """
+        params = {"page_size": 10, "sort": "-views"}
+        if theme:
+            params["tag"] = theme
+
+        async with httpx.AsyncClient(timeout=self.valves.timeout) as client:
+            resp = await client.get(
+                f"{self.valves.datagouv_api_url}/datasets/",
+                params=params,
+            )
+            if resp.status_code != 200:
+                return json.dumps({"error": f"Erreur API data.gouv.fr ({resp.status_code})"})
+
+            data = resp.json()
+            results = [r for r in (self._format_dataset(ds) for ds in data.get("data", [])) if r]
+
+            if not results:
+                return json.dumps({
+                    "message": f"Aucun dataset tabulaire populaire trouvé" + (f" pour le thème '{theme}'" if theme else "") + ".",
+                    "suggestion": "Essayez sans thème, ou utilisez data_search(query) pour une recherche par mots-clés.",
+                }, ensure_ascii=False)
+
+            output = {
+                "theme": theme or "tous",
+                "count": len(results),
+                "datasets": results,
+                "_suggestions": (
+                    "\n\n---\n**Pour explorer un dataset, utilisez son URL :**\n"
+                    '- `data_preview(url)` pour un aperçu\n'
+                    '- `data_search(query)` pour affiner la recherche'
                 ),
             }
             return json.dumps(output, ensure_ascii=False, default=str)
