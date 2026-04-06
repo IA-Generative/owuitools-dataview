@@ -39,7 +39,7 @@ def _render_datasets_html(datasets: list[dict], title: str, pagination: str = ""
 
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
-body {{ font-family: -apple-system, sans-serif; margin: 0; padding: 12px; background: #fafafa; }}
+html, body {{ font-family: -apple-system, sans-serif; margin: 0; padding: 12px; background: #fafafa; min-height: 600px; }}
 h3 {{ margin: 0 0 8px 0; color: #333; font-size: 15px; }}
 .info {{ color: #666; font-size: 12px; margin-bottom: 8px; }}
 table {{ width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
@@ -51,6 +51,10 @@ th {{ background: #f5f5f5; padding: 8px; text-align: left; font-size: 13px; bord
 <tr><th>Dataset</th><th>Fichiers</th><th>Mis à jour</th></tr>
 {rows}
 </table>
+<script>
+// Tell parent iframe to resize to content height
+try {{ window.parent.postMessage({{ type: 'resize', height: document.body.scrollHeight + 40 }}, '*'); }} catch(e) {{}}
+</script>
 </body></html>"""
 
 
@@ -68,13 +72,16 @@ def _render_query_html(result: list[dict], operation: str, pagination_text: str 
 
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
-body {{ font-family: -apple-system, sans-serif; margin: 0; padding: 12px; background: #fafafa; }}
+html, body {{ font-family: -apple-system, sans-serif; margin: 0; padding: 12px; background: #fafafa; min-height: 500px; }}
 .info {{ color: #666; font-size: 12px; margin-bottom: 8px; }}
 table {{ width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
 th {{ position: sticky; top: 0; z-index: 1; }}
 </style></head><body>
 <div class="info">{html.escape(operation)}{(' — ' + html.escape(pagination_text)) if pagination_text else ''}</div>
 <table><tr>{header}</tr>{rows}</table>
+<script>
+try {{ window.parent.postMessage({{ type: 'resize', height: document.body.scrollHeight + 40 }}, '*'); }} catch(e) {{}}
+</script>
 </body></html>"""
 from pydantic import BaseModel, Field
 
