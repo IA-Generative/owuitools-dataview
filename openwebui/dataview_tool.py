@@ -127,24 +127,40 @@ class Tools:
             "resources": resources[:5],
         }
 
+    async def _fetch_datasets(self, params: dict) -> tuple[list[dict], int, int, int]:
+        """Fetch datasets from data.gouv.fr API. Returns (results, total, page, page_size)."""
+        async with httpx.AsyncClient(timeout=self.valves.timeout) as client:
+            resp = await client.get(
+                f"{self.valves.datagouv_api_url}/datasets/",
+                params=params,
+            )
+            if resp.status_code != 200:
+                return [], 0, 1, 0
+
+            data = resp.json()
+            results = [r for r in (self._format_dataset(ds) for ds in (data.get("data") or [])) if r]
+            return results, data.get("total", 0), data.get("page", 1), data.get("page_size", 20)
+
     async def data_search(
         self,
         query: str = "",
         organization: str = "",
         tag: str = "",
+        page: int = 1,
         __user__: dict = {},
     ) -> str:
-        """Recherche des jeux de données open data sur data.gouv.fr (74 000+ datasets publics). Retourne les datasets avec leurs fichiers téléchargeables (CSV, Excel, JSON, Parquet).
+        """Recherche des jeux de données open data sur data.gouv.fr (74 000+ datasets publics). Retourne les datasets avec leurs fichiers téléchargeables (CSV, Excel, JSON, Parquet). Utilise le paramètre page pour voir les résultats suivants.
 
         :param query: Mots-clés de recherche en langage naturel
         :param organization: Filtrer par organisation (ex: "SNCF", "INSEE", "Ministère")
         :param tag: Filtrer par tag (ex: "transport", "emploi", "sante", "environnement")
+        :param page: Numéro de page (1, 2, 3...) pour parcourir tous les résultats
         :return: Liste de datasets avec titre, description, formats et URLs
         """
         if not query and not organization and not tag:
             query = "données ouvertes"
 
-        params = {"page_size": 10}
+        params = {"page_size": 20, "page": page or 1}
         if query:
             params["q"] = query
         if organization:
@@ -152,79 +168,73 @@ class Tools:
         if tag:
             params["tag"] = tag
 
-        async with httpx.AsyncClient(timeout=self.valves.timeout) as client:
-            resp = await client.get(
-                f"{self.valves.datagouv_api_url}/datasets/",
-                params=params,
-            )
-            if resp.status_code != 200:
-                return json.dumps({"error": f"Erreur API data.gouv.fr ({resp.status_code})"})
+        results, total, current_page, page_size = await self._fetch_datasets(params)
 
-            data = resp.json()
-            results = [r for r in (self._format_dataset(ds) for ds in data.get("data", [])) if r]
+        if not results:
+            return json.dumps({
+                "message": "Aucun dataset tabulaire trouvé pour cette recherche.",
+                "suggestion": "Essayez d'autres mots-clés, ou utilisez data_list_popular() pour voir les datasets les plus consultés.",
+            }, ensure_ascii=False)
 
-            if not results:
-                return json.dumps({
-                    "message": f"Aucun dataset tabulaire trouvé pour cette recherche.",
-                    "suggestion": "Essayez d'autres mots-clés, ou utilisez data_list_popular() pour voir les datasets les plus consultés.",
-                }, ensure_ascii=False)
-
-            output = {
-                "query": query or f"organization={organization}" if organization else f"tag={tag}" if tag else "",
-                "total": data.get("total", 0),
-                "count": len(results),
-                "datasets": results,
-                "_suggestions": (
-                    "\n\n---\n**Pour explorer un dataset, utilisez son URL :**\n"
-                    '- `data_preview(url)` pour un aperçu\n'
-                    '- `data_schema(url)` pour le schéma détaillé\n'
-                    '- `data_query(url, question)` pour interroger les données'
-                ),
-            }
-            return json.dumps(output, ensure_ascii=False, default=str)
+        has_more = (current_page * page_size) < total
+        output = {
+            "query": query or (f"organization={organization}" if organization else f"tag={tag}" if tag else ""),
+            "total": total,
+            "page": current_page,
+            "page_size": page_size,
+            "count": len(results),
+            "has_more": has_more,
+            "datasets": results,
+            "_suggestions": (
+                "\n\n---\n**Pour explorer un dataset, utilisez son URL :**\n"
+                '- `data_preview(url)` pour un aperçu\n'
+                '- `data_schema(url)` pour le schéma détaillé\n'
+                '- `data_query(url, question)` pour interroger les données\n'
+                + (f'- **Page suivante** : `data_search(query="{query}", page={current_page + 1})`' if has_more else '')
+            ),
+        }
+        return json.dumps(output, ensure_ascii=False, default=str)
 
     async def data_list_popular(
         self,
         theme: str = "",
+        page: int = 1,
         __user__: dict = {},
     ) -> str:
-        """Liste les jeux de données open data les plus populaires sur data.gouv.fr, triés par nombre de vues.
+        """Liste les jeux de données open data les plus populaires sur data.gouv.fr, triés par nombre de vues. Utilise le paramètre page pour voir plus de résultats.
 
         :param theme: Thème optionnel pour filtrer (ex: "transport", "sante", "education", "environnement", "emploi", "logement")
-        :return: Les 10 datasets les plus consultés avec leurs fichiers
+        :param page: Numéro de page (1, 2, 3...) pour parcourir tous les résultats
+        :return: Les datasets les plus consultés avec leurs fichiers
         """
-        params = {"page_size": 10, "sort": "-views"}
+        params = {"page_size": 20, "sort": "-views", "page": page or 1}
         if theme:
             params["tag"] = theme
 
-        async with httpx.AsyncClient(timeout=self.valves.timeout) as client:
-            resp = await client.get(
-                f"{self.valves.datagouv_api_url}/datasets/",
-                params=params,
-            )
-            if resp.status_code != 200:
-                return json.dumps({"error": f"Erreur API data.gouv.fr ({resp.status_code})"})
+        results, total, current_page, page_size = await self._fetch_datasets(params)
 
-            data = resp.json()
-            results = [r for r in (self._format_dataset(ds) for ds in data.get("data", [])) if r]
+        if not results:
+            return json.dumps({
+                "message": f"Aucun dataset tabulaire populaire trouvé" + (f" pour le thème '{theme}'" if theme else "") + ".",
+                "suggestion": "Essayez sans thème, ou utilisez data_search(query) pour une recherche par mots-clés.",
+            }, ensure_ascii=False)
 
-            if not results:
-                return json.dumps({
-                    "message": f"Aucun dataset tabulaire populaire trouvé" + (f" pour le thème '{theme}'" if theme else "") + ".",
-                    "suggestion": "Essayez sans thème, ou utilisez data_search(query) pour une recherche par mots-clés.",
-                }, ensure_ascii=False)
-
-            output = {
-                "theme": theme or "tous",
-                "count": len(results),
-                "datasets": results,
-                "_suggestions": (
-                    "\n\n---\n**Pour explorer un dataset, utilisez son URL :**\n"
-                    '- `data_preview(url)` pour un aperçu\n'
-                    '- `data_search(query)` pour affiner la recherche'
-                ),
-            }
-            return json.dumps(output, ensure_ascii=False, default=str)
+        has_more = (current_page * page_size) < total
+        output = {
+            "theme": theme or "tous",
+            "total": total,
+            "page": current_page,
+            "count": len(results),
+            "has_more": has_more,
+            "datasets": results,
+            "_suggestions": (
+                "\n\n---\n**Pour explorer un dataset, utilisez son URL :**\n"
+                '- `data_preview(url)` pour un aperçu\n'
+                '- `data_search(query)` pour affiner la recherche\n'
+                + (f'- **Page suivante** : `data_list_popular(theme="{theme}", page={current_page + 1})`' if has_more else '')
+            ),
+        }
+        return json.dumps(output, ensure_ascii=False, default=str)
 
     async def data_preview(
         self,
